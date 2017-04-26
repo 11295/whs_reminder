@@ -9,6 +9,8 @@ Private Const DATA_IDX_MSG = 3
 Private Const EFFECT_FLG_ON = "1"
 Private Const EFFECT_FLG_OFF = "0"
 
+Private Const DAILY_TASK = "-"
+
 Private Const DATE_FORMAT = "yyyy/mm/dd"
 Private Const TIME_FORMAT = "hh:nn"
 
@@ -30,38 +32,38 @@ Sub Checker()
 	Dim file
 	Set file = fso.OpenTextFile(path, 1)
 	If Err.Number = 0 Then
-		Dim lineData		
-    Dim lineArray
-		Dim flg
-		Dim dt
+		Dim lineData
+		Dim lineArray
 		Dim tm
 		Do While file.AtEndOfStream <> True
 			' TAB区切りCSV形式のiniファイル
 			' 行データ構造
 			' 有効/無効フラグ	日付	時刻	表示内容
 			lineData = file.ReadLine
-			lineArray = Split(lineData, vbTab)
-			If Len(Trim(lineData)) = 0 Or Ubound(lineArray) <> DATA_ITEM_CNT Then
-				' トリムして空行または列数が定義と異なる場合、処理終了
+			lineArray = GetLineArray(lineData)
+			If Len(Trim(lineData)) = 0 Then
+				' トリムして空行の場合、処理終了
 				Exit Do
+			Else
+				If Ubound(lineArray) <> DATA_ITEM_CNT Then
+					' 列数が定義と異なる場合、処理終了
+					Exit Do
+				End If
 			End If
 
-			If len(lineArray(DATA_IDX_FLG)) = 1 _
-				And lineArray(DATA_IDX_FLG) = EFFECT_FLG_ON Then
+			If IsEffect(lineArray(DATA_IDX_FLG)) Then
 				' フラグが有効の場合
-				dt = DateValue(lineArray(DATA_IDX_DATE))
-				If dt = Date Then
-					' 今日の場合
-					tm = TimeValue(lineArray(DATA_IDX_TIME))
-					If Time() <= tm And tm =< DateAdd("n", 3, Time()) Then
-						' まだ時間になっていない、かつ3分後以内の予定を表示
+				If IsTargetDay(lineArray(DATA_IDX_DATE)) Then
+					' 今日または毎日の場合
+					tm = IsAlertTime(lineArray(DATA_IDX_TIME))
+					If len(tm) > 0 Then
+						' まだ時間になっていない、かつ1分前、2分後以内の予定を表示
 						Dim msg
-						msg = tm & " " & Replace(lineArray(DATA_IDX_MSG), NEW_LINE, vbNewLine) & vbNewLine & vbNewLine & "(データファイルを開く「はい」、終了「いいえ」)"
-						Dim btnRet
-						btnRet = MsgBox(msg, vbYesNo + vbInformation + VbMsgBoxSetForeground, "予定")
-						
-						' ボタンに応じてデータファイルをsakuraで開く
-						If btnRet = vbYes Then
+						msg = tm & " " & Replace(lineArray(DATA_IDX_MSG), NEW_LINE, vbNewLine) & _
+								vbNewLine & vbNewLine & "(データファイルを開く「はい」、終了「いいえ」)"
+
+						If MsgBox(msg, vbYesNo + vbInformation + VbMsgBoxSetForeground, "予定") = vbYes Then
+							' ボタンに応じてデータファイルをsakuraで開く
 							Dim objWShell
 							Set objWShell = CreateObject("WScript.Shell")
 							objWShell.Run APP_PATH & " -- " & path
@@ -82,4 +84,49 @@ Sub Checker()
 	Set fso = Nothing
 End Sub
 
+' 行データ取得
+Function GetLineArray(ByVal lineData)
+	GetLineArray = Split(lineData, vbTab)
 
+	Dim col
+	For Each col In GetLineArray
+		col = Trim(col)
+	Next
+End Function
+
+' 有効チェック
+Function IsEffect(ByVal flg)
+	IsEffect = (Len(flg) = 1 And flg = EFFECT_FLG_ON)
+End Function
+
+' 日付チェック
+Function IsTargetDay(ByVal dt)
+	IsTargetDay = True
+
+	If dt = DAILY_TASK Then
+		Exit Function
+	End If
+
+	If DateValue(dt) = Date Then
+		Exit Function
+	End If
+
+	IsTargetDay = False
+End Function
+
+' 時刻チェック
+Function IsAlertTime(ByVal tm)
+	IsAlertTime = ""
+	If Len(tm) = 0 Then
+		Exit Function
+	End If
+
+	tm = TimeValue(tm)
+	If Not(DateAdd("n", -1, Time()) <= tm _
+			And tm =< DateAdd("n", 2, Time())) Then
+		' 1分前、2分後以外の場合
+		Exit Function
+	End If
+
+	IsAlertTime = tm
+End Function
